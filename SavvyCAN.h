@@ -1,0 +1,163 @@
+#ifndef SAVVYCAN_H
+# define SAVVYCAN_H
+
+#include "WiFi.h"
+#include "config.h"
+#include "freertos/queue.h"
+#include "can_common.h"
+#include "../board.h"
+
+//Buffer for CAN frames when sending over wifi. This allows us to build up a multi-frame packet that goes
+//over the air all at once. This is much more efficient than trying to send a new TCP/IP packet for each and every
+//frame. It delays frames from getting to the other side a bit but that's life.
+#define WIFI_BUFF_SIZE      2048
+
+//Number of microseconds between hard flushes of the serial buffer (if not in wifi mode) or the wifi buffer (if in wifi mode)
+//This keeps the latency more consistent. Otherwise the buffer could partially fill and never send.
+#define SER_BUFF_FLUSH_INTERVAL 50000
+
+
+class SavvyCANBusConfiguration
+{
+	public:
+    uint32_t Speed;
+    uint32_t FDSpeed;
+    boolean Enabled;
+    boolean FDMode;
+    boolean ListenOnly; //if true we don't allow any messing with the bus but rather just passively monitor.
+
+	void apply_to(CAN_COMMON *bus);
+};
+
+class SavvyCANNode
+{
+public:
+	SavvyCANNode(HardwareSerial &console, WiFiServer &server);
+	void sendFrameToUSB(CAN_FRAME_FD &frame, int whichBus);  // 
+    void setup(void);
+    void calculate_bus_load(void);
+	void processIncomingByte(uint8_t in_byte);
+    HardwareSerial &console;
+    WiFiServer &wifiServer;
+    void setPromiscuousMode(void);
+    void handleWiFi(void);
+    void handleSerial(void);
+    void packFrameToBeSent(CAN_FRAME_FD &frame, int whichBus);
+    QueueHandle_t   receive_queue;
+
+private:
+	// struct SavvyCANsettings *settings;
+	// uint8_t checksumCalc(uint8_t *buffer, int length);
+	// CAN_COMMON *get_bus_by_number(int number);
+	byte serialBuffer[WIFI_BUFF_SIZE];
+	int serialBufferLength = 0; //not creating a ring buffer. The buffer should be large enough to never overflow
+	uint32_t        lastFlushMicros = 0;
+	uint32_t        lastBroadcast = 0;
+	uint32_t        busLoadTimer;
+};
+
+#define MAX_CLIENTS 1
+#define CFG_BUILD_NUM   362
+#define CFG_VERSION "ESP32RET Beta Mar 06 2019"
+#define EEPROM_VER      0x21
+
+struct SystemSettings {
+    boolean useSD; //should we attempt to use the SDCard? (No logging possible otherwise)
+    boolean logToFile; //are we currently supposed to be logging to file?
+    boolean SDCardInserted;
+    uint8_t LED_CANTX;
+    uint8_t LED_CANRX;
+    uint8_t LED_LOGGING;
+    boolean txToggle; //LED toggle values
+    boolean rxToggle;
+    boolean logToggle;
+    boolean lawicelMode;
+    boolean lawicellExtendedMode;
+    boolean lawicelAutoPoll;
+    boolean lawicelTimestamping;
+    int lawicelPollCounter;
+    boolean lawicelBusReception[NUM_BUSES]; //does user want to see messages from this bus?
+    int8_t numBuses; //number of buses this hardware currently supports.
+    WiFiClient clientNodes[MAX_CLIENTS];
+    boolean isWifiConnected;
+    boolean isWifiActive;
+};
+
+enum FILEOUTPUTTYPE {
+    NONE = 0,
+    BINARYFILE = 1,
+    GVRET = 2,
+    CRTD = 3
+};
+
+struct EEPROMSettings {
+    uint8_t version;
+
+    uint32_t CAN0Speed;
+    uint32_t CAN1Speed;
+    uint32_t CAN1FDSpeed;
+    boolean CAN0_Enabled;
+    boolean CAN1_Enabled;
+    boolean CAN1_FDMode;
+
+    boolean useBinarySerialComm; //use a binary protocol on the serial link or human readable format?
+    FILEOUTPUTTYPE fileOutputType; //what format should we use for file output?
+
+    char fileNameBase[30]; //Base filename to use
+    char fileNameExt[4]; //extension to use
+    uint16_t fileNum; //incrementing value to append to filename if we create a new file each time
+    boolean appendFile; //start a new file every power up or append to current?
+    boolean autoStartLogging; //should logging start immediately on start up?
+
+    uint8_t logLevel; //Level of logging to output on serial line
+    uint8_t sysType; 
+
+    uint16_t valid; //stores a validity token to make sure EEPROM is not corrupt
+
+    boolean CAN0ListenOnly; //if true we don't allow any messing with the bus but rather just passively monitor.
+    boolean CAN1ListenOnly;
+
+    //if we're using WiFi then output to serial is disabled (it's far too slow to keep up)  
+    uint8_t wifiMode; //0 = don't use wifi, 1 = connect to an AP, 2 = Create an AP
+    uint8_t SSID[32];     //null terminated string for the SSID
+    uint8_t WPA2Key[64]; //Null terminated string for the key. Can be a passphase or the actual key
+};
+
+enum STATE {
+    IDLE,
+    GET_COMMAND,
+    BUILD_CAN_FRAME,
+    TIME_SYNC,
+    GET_DIG_INPUTS,
+    GET_ANALOG_INPUTS,
+    SET_DIG_OUTPUTS,
+    SETUP_CANBUS,
+    GET_CANBUS_PARAMS,
+    GET_DEVICE_INFO,
+    SET_SINGLEWIRE_MODE,
+    SET_SYSTYPE,
+    ECHO_CAN_FRAME,
+    SETUP_EXT_BUSES
+};
+
+enum GVRET_PROTOCOL
+{
+    PROTO_BUILD_CAN_FRAME = 0,
+    PROTO_TIME_SYNC = 1,
+    PROTO_DIG_INPUTS = 2,
+    PROTO_ANA_INPUTS = 3,
+    PROTO_SET_DIG_OUT = 4,
+    PROTO_SETUP_CANBUS = 5,
+    PROTO_GET_CANBUS_PARAMS = 6,
+    PROTO_GET_DEV_INFO = 7,
+    PROTO_SET_SW_MODE = 8,
+    PROTO_KEEPALIVE = 9,
+    PROTO_SET_SYSTYPE = 10,
+    PROTO_ECHO_CAN_FRAME = 11,
+    PROTO_GET_NUMBUSES = 12,
+    PROTO_GET_EXT_BUSES = 13,
+    PROTO_SET_EXT_BUSES = 14
+};
+
+
+#endif
