@@ -8,7 +8,7 @@ Things that used to be interspersed with this code, but are no longer:
 
 #include <Arduino.h>
 #include "can_common.h"
-#include "SavvyCAN.h"
+#include "SavvyCANNode.h"
 #include "EEPROM.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
