@@ -8,20 +8,15 @@ Things that used to be interspersed with this code, but are no longer:
 
 #include <Arduino.h>
 #include "can_common.h"
-#include "SavvyCANNode.h"
+#include "SavvyCANServer.h"
 #include "EEPROM.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include <WiFiUdp.h>
 #include "../board.h"
 
-//Buffer for CAN frames when sending over wifi. This allows us to build up a multi-frame packet that goes
-//over the air all at once. This is much more efficient than trying to send a new TCP/IP packet for each and every
-//frame. It delays frames from getting to the other side a bit but that's life.
-#define WIFI_BUFF_SIZE      2048
-
 #ifndef SAVVYCAN_FREERTOS_TASK_PRIORITY
-#define SAVVYCAN_FREERTOS_TASK_PRIORITY 3  // Override this if your app is competing with SavvyCANNode 
+#define SAVVYCAN_FREERTOS_TASK_PRIORITY 8  // Override this if your app is competing with SavvyCANServer 
 #endif
 
 typedef struct {
@@ -52,26 +47,17 @@ uint8_t checksumCalc(uint8_t *buffer, int length)
     return valu;
 }
 
-/*
-This should probably go in CAN_COMMON
-*/
-typedef struct
-{
-    CAN_FRAME_FD *frame;
-    int bus;
-}   frameobject_t;
-
-SavvyCANNode::SavvyCANNode(HardwareSerial &console, WiFiServer &server) :
+SavvyCANServer::SavvyCANServer(HardwareSerial &console, WiFiServer &server) :
     console(console),
     wifiServer(server)
 {
-    receive_queue = xQueueCreate(50, sizeof(frameobject_t));
+    receive_queue = xQueueCreate(SAVVYCAN, sizeof(frameobject_t));
 }
 
 void flush_buffer(void *pvParameters)
 {
-    SavvyCANNode *node = (SavvyCANNode *)pvParameters;
-    frameobject_t *frameobject;
+    SavvyCANServer *node = (SavvyCANServer *)pvParameters;
+    frameobject_t frameobject;
 
     while (1)
     {
@@ -79,16 +65,14 @@ void flush_buffer(void *pvParameters)
         node->handleSerial();
         if (xQueueReceive(node->receive_queue, &frameobject, 0))
         {
-            node->packFrameToBeSent(*frameobject->frame, frameobject->bus);
-            free(frameobject->frame);
-            free(frameobject);
+            node->packFrameToBeSent(frameobject.frame, frameobject.bus);
         }
         else
             vTaskDelay(1 / portTICK_PERIOD_MS);
     }
 }
 
-void SavvyCANNode::setup(void)
+void SavvyCANServer::setup(void)
 {
     busLoad[0].bitsSoFar = 0;
     busLoad[0].busloadPercentage = 0;
@@ -128,7 +112,7 @@ void SavvyCANNode::setup(void)
     settings.valid = 0; //not used right now
 }
 
-void SavvyCANNode::setPromiscuousMode(void)
+void SavvyCANServer::setPromiscuousMode(void)
 {
     CAN0.watchFor();
     CAN1.watchFor();
@@ -142,13 +126,13 @@ void addBits(int offset, CAN_FRAME_FD &frame)
     if (frame.extended) busLoad[offset].bitsSoFar += 18;
 }
 
-void SavvyCANNode::handleSerial(void)
+void SavvyCANServer::handleSerial(void)
 {
     int serialCnt;
     uint8_t in_byte;
 
-    //If the max time has passed or the buffer is almost filled then send buffered data out
-    if ((micros() - lastFlushMicros > SER_BUFF_FLUSH_INTERVAL) || (serialBufferLength > (WIFI_BUFF_SIZE - 40)) ) {
+    //If the buffer is almost filled then send buffered data out
+    if ((serialBufferLength > (WIFI_BUFF_SIZE - 40)) ) {
         if (serialBufferLength > 0) {
             if (settings.wifiMode == 0 || !SysSettings.isWifiActive)
                 // Serial.write(serialBuffer, serialBufferLength);
@@ -176,7 +160,7 @@ void SavvyCANNode::handleSerial(void)
     }
 }
 
-void SavvyCANNode::handleWiFi(void)
+void SavvyCANServer::handleWiFi(void)
 {
     if (settings.wifiMode > 0)
     {
@@ -240,7 +224,7 @@ void SavvyCANNode::handleWiFi(void)
             }
         }
 
-        if (SysSettings.isWifiConnected && micros() - lastBroadcast > 1000000ul) //every second send out a broadcast ping
+        if (micros() - lastBroadcast > 1000000ul) //every second send out a broadcast ping
         {
             uint8_t buff[4] = {0x1C,0xEF,0xAC,0xED};
             lastBroadcast = micros();
@@ -253,7 +237,7 @@ void SavvyCANNode::handleWiFi(void)
 
 
 
-void SavvyCANNode::calculate_bus_load(void)
+void SavvyCANServer::calculate_bus_load(void)
 {
     if (millis() > (busLoadTimer + 250)) {
         busLoadTimer = millis();
@@ -285,25 +269,20 @@ void sendFrame(CAN_COMMON *bus, CAN_FRAME &frame)
     addBits(whichBus, fd);
 }
 
-void SavvyCANNode::sendFrameToUSB(CAN_FRAME_FD &frame, int whichBus)
+void SavvyCANServer::sendFrameToUSB(CAN_FRAME_FD &frame, int whichBus)
 {
-    frameobject_t *frameobject = new frameobject_t;
-    CAN_FRAME_FD *fd = new CAN_FRAME_FD;
+    frameobject_t frameobject;
 
-    *fd = frame; // Copy this because frame will be freed when this function returns.  fd needs to sit on a queue
-
-    frameobject->frame = fd;
-    frameobject->bus = whichBus;
+    frameobject.frame = frame;
+    frameobject.bus = whichBus;
 
     if (xQueueSend(receive_queue, &frameobject, 0) != pdPASS)
     {
         // Serial.printf("Failed to send frame id %x to SavvyCAN.  The tubes are blocked\n", frame.id);
-        free(frameobject->frame);
-        free(frameobject);
     }
 }
 
-void SavvyCANNode::packFrameToBeSent(CAN_FRAME_FD &frame, int whichBus)
+void SavvyCANServer::packFrameToBeSent(CAN_FRAME_FD &frame, int whichBus)
 {
     uint8_t buff[40];
     uint8_t writtenBytes;
@@ -357,6 +336,10 @@ void SavvyCANNode::packFrameToBeSent(CAN_FRAME_FD &frame, int whichBus)
             serialBuffer[serialBufferLength++] = (uint8_t)(frame.id >> 8);
             serialBuffer[serialBufferLength++] = (uint8_t)(frame.id >> 16);
             serialBuffer[serialBufferLength++] = (uint8_t)(frame.id >> 24);
+            if (frame.length > 8 || frame.length < 0)
+            {
+                Serial.printf("Warning! frame length (%d) out of bounds\n", frame.length);
+            }
             serialBuffer[serialBufferLength++] = frame.length + (uint8_t)(whichBus << 4);
             for (int c = 0; c < frame.length; c++) {
                 serialBuffer[serialBufferLength++] = frame.data.uint8[c];
@@ -384,7 +367,7 @@ void SavvyCANNode::packFrameToBeSent(CAN_FRAME_FD &frame, int whichBus)
 
 }
 
-void SavvyCANNode::processIncomingByte(uint8_t in_byte)
+void SavvyCANServer::processIncomingByte(uint8_t in_byte)
 {
     static CAN_FRAME build_out_frame;
     static CAN_FRAME_FD build_out_FD;

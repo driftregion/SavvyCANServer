@@ -1,11 +1,11 @@
-# SavvyCANNode
+# SavvyCANServer
 
-Just the section of ESP32RET that's responsible for sending frames to SavvyCAN over WiFi
+Just the section of ESP32RET that's responsible for sending frames to the [SavvyCAN client](https://github.com/collin80/SavvyCAN) over WiFi
 
 ## Usage
 ```cpp
-#include "SavvyCANNode.h"
+#include "SavvyCANServer.h"
 
-SavvyCANNode  savvyCAN(serial, wifiServer);
+SavvyCANServer  savvyCAN(serial, wifiServer);
 ...
 ```

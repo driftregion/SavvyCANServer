@@ -10,7 +10,9 @@
 //Buffer for CAN frames when sending over wifi. This allows us to build up a multi-frame packet that goes
 //over the air all at once. This is much more efficient than trying to send a new TCP/IP packet for each and every
 //frame. It delays frames from getting to the other side a bit but that's life.
-#define WIFI_BUFF_SIZE      2048
+
+// MTU (Maximum Transmit Unit) for WiFi media is 1500 bytes, so we make the buffer a little smaller than that to leave room for headers.
+#define WIFI_BUFF_SIZE     1300 
 
 //Number of microseconds between hard flushes of the serial buffer (if not in wifi mode) or the wifi buffer (if in wifi mode)
 //This keeps the latency more consistent. Otherwise the buffer could partially fill and never send.
@@ -29,10 +31,23 @@ class SavvyCANBusConfiguration
 	void apply_to(CAN_COMMON *bus);
 };
 
-class SavvyCANNode
+/*
+This should probably go in CAN_COMMON
+This is used on SavvyCANServer's receive queue to keep frames mapped to a bus
+*/
+typedef struct
+{
+    CAN_FRAME_FD frame;
+    int bus;
+}   frameobject_t;
+
+
+#define SAVVYCANSERVER_RX_QUEUE_SIZE_FRAMEOBJECTS 10
+
+class SavvyCANServer
 {
 public:
-	SavvyCANNode(HardwareSerial &console, WiFiServer &server);
+	SavvyCANServer(HardwareSerial &console, WiFiServer &server);
 	void sendFrameToUSB(CAN_FRAME_FD &frame, int whichBus);  // 
     void setup(void);
     void calculate_bus_load(void);
@@ -46,9 +61,6 @@ public:
     QueueHandle_t   receive_queue;
 
 private:
-	// struct SavvyCANsettings *settings;
-	// uint8_t checksumCalc(uint8_t *buffer, int length);
-	// CAN_COMMON *get_bus_by_number(int number);
 	byte serialBuffer[WIFI_BUFF_SIZE];
 	int serialBufferLength = 0; //not creating a ring buffer. The buffer should be large enough to never overflow
 	uint32_t        lastFlushMicros = 0;
