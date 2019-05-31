@@ -12,7 +12,7 @@
 //frame. It delays frames from getting to the other side a bit but that's life.
 
 // MTU (Maximum Transmit Unit) for WiFi media is 1500 bytes, so we make the buffer a little smaller than that to leave room for headers.
-#define WIFI_BUFF_SIZE     1300 
+#define WIFI_BUFF_SIZE   1300 
 
 //Number of microseconds between hard flushes of the serial buffer (if not in wifi mode) or the wifi buffer (if in wifi mode)
 //This keeps the latency more consistent. Otherwise the buffer could partially fill and never send.

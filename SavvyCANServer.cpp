@@ -51,7 +51,7 @@ SavvyCANServer::SavvyCANServer(HardwareSerial &console, WiFiServer &server) :
     console(console),
     wifiServer(server)
 {
-    receive_queue = xQueueCreate(SAVVYCAN, sizeof(frameobject_t));
+    receive_queue = xQueueCreate(SAVVYCANSERVER_RX_QUEUE_SIZE_FRAMEOBJECTS, sizeof(frameobject_t));
 }
 
 void flush_buffer(void *pvParameters)
@@ -131,8 +131,9 @@ void SavvyCANServer::handleSerial(void)
     int serialCnt;
     uint8_t in_byte;
 
-    //If the buffer is almost filled then send buffered data out
-    if ((serialBufferLength > (WIFI_BUFF_SIZE - 40)) ) {
+    //If the buffer is almost filled, or it's been 0.1s then send buffered data out.
+    if (micros() - lastFlushMicros > 10000 || (serialBufferLength > (WIFI_BUFF_SIZE - 40)) ) {
+    // if ((serialBufferLength > (40)) ) {  // Just for debugging our comms with the SavvyCAN client
         if (serialBufferLength > 0) {
             if (settings.wifiMode == 0 || !SysSettings.isWifiActive)
                 // Serial.write(serialBuffer, serialBufferLength);
@@ -512,7 +513,7 @@ void SavvyCANServer::processIncomingByte(uint8_t in_byte)
         case PROTO_GET_NUMBUSES:
             serialBuffer[serialBufferLength++] = 0xF1;
             serialBuffer[serialBufferLength++] = 12;
-            serialBuffer[serialBufferLength++] = 2; //just CAN0 and CAN1 on this hardware
+            serialBuffer[serialBufferLength++] = NUM_BUSES; 
             state = IDLE;
             break;
         case PROTO_GET_EXT_BUSES:
