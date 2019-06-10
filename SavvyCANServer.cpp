@@ -76,6 +76,20 @@ bool SavvyCANServer::serial_buffer_has_room()
     return (serialBufferLength + SERIAL_BUFFER_FRAME_SIZE < WIFI_BUFF_SIZE);
 }
 
+void SavvyCANServerTask(void *arg)
+{
+    SavvyCANServer *server = (SavvyCANServer*)arg;
+
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(1);
+
+    while (1)
+    {
+        server->task_1kHz();
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+
 void SavvyCANServer::task_1kHz(void)
 {
     frameobject_t frameobject;

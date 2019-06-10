@@ -18,12 +18,10 @@ void setup()
   savvycan.setup();
   savvycan.registerBus(MOTOR_BUS);		// type: CAN_COMMON
   savvycan.registerBus(DIAG_BUS);
+
+  // Use a FreeRTOS task
+  xTaskCreatePinnedToCore(&SavvyCANServerTask, "SavvyCANServerTask", 10800, &savvycan, 2, NULL, 0);
 }
 
-void task_1kHz(void *arg)
-{
-	...
-    savvycan.task_1kHz();
-}
 ...
 ```

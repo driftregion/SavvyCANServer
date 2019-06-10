@@ -63,6 +63,9 @@ typedef struct {
     frame_direction_e   direction;
 } frameobject_t;
 
+// A FreeRTOS task function.  Use this with `xTaskCreate` or call `task_1kHz` from elsewhere. 
+void SavvyCANServerTask(void *arg);
+
 class SavvyCANServer {
   public:
     SavvyCANServer(HardwareSerial &console, WiFiServer &server);
