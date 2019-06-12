@@ -81,7 +81,7 @@ void SavvyCANServerTask(void *arg)
     SavvyCANServer *server = (SavvyCANServer*)arg;
 
     TickType_t xLastWakeTime = xTaskGetTickCount();
-    const TickType_t xFrequency = pdMS_TO_TICKS(1);
+    const TickType_t xFrequency = pdMS_TO_TICKS(10);
 
     while (1)
     {
