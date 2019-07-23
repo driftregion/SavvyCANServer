@@ -2,15 +2,17 @@
 #define SAVVYCAN_H
 
 #include "../AveragingMethodTimer.h"
-#include "../board.h"
 #include "WiFi.h"
 #include "can_common.h"
 #include "config.h"
 #include "freertos/queue.h"
 
 #ifndef SAVVYCAN_NUM_BUSES
-#error                                                                         \
-    "define a number of CAN buses for SavvyCANServer.  This sets the maximum bus number acceptable by `sendFrameToUSB(...)`"
+#define SAVVYCAN_NUM_BUSES 3
+#endif
+
+#ifndef ERROR
+#define ERROR(...)
 #endif
 
 // Buffer for CAN frames when sending over wifi. This allows us to build up a
@@ -46,30 +48,13 @@ class SavvyCANBusConfiguration {
     void apply_to(CAN_COMMON *bus);
 };
 
-enum frame_direction_e
-{
-    FRAME_DIRECTION_RX = 0,
-    FRAME_DIRECTION_TX
-};
 
-/*
-This should probably go in CAN_COMMON
-This is used on SavvyCANServer's receive queue to keep frames mapped to a bus
-and an RX/TX direction
-*/
-typedef struct {
-    CAN_FRAME_FD        frame;
-    int                 bus_number;
-    frame_direction_e   direction;
-} frameobject_t;
-
-// A FreeRTOS task function.  Use this with `xTaskCreate` or call `task_1kHz` from elsewhere. 
+// A FreeRTOS task function.  Use this with `xTaskCreate` or call `task_1kHz` from elsewhere.
 void SavvyCANServerTask(void *arg);
 
 class SavvyCANServer {
   public:
     SavvyCANServer(HardwareSerial &console, WiFiServer &server);
-    CAN_COMMON *can_buses[SAVVYCAN_NUM_BUSES];
 
     void setup(void);
     void calculate_bus_load(void);
@@ -79,13 +64,14 @@ class SavvyCANServer {
     void setPromiscuousMode(void);
     void handleWiFi(void);
     void handleSerial(void);
-    void packFrameToBeSent(CAN_FRAME_FD &frame, int whichBus);
+    void packFrameToBeSent(CAN_FRAME &frame, int whichBus);
     QueueHandle_t receive_queue;
     bool rx_queue_overrun;
     int registerBus(CAN_COMMON &bus);
-    void    task_1kHz(void); 
+    void task_1kHz(void);
 
   private:
+    CAN_COMMON *can_buses[SAVVYCAN_NUM_BUSES];
     byte serialBuffer[WIFI_BUFF_SIZE];
     bool serial_buffer_has_room();
     int serialBufferLength = 0; // not creating a ring buffer. The buffer should
@@ -100,8 +86,8 @@ class SavvyCANServer {
 #define EEPROM_VER 0x21
 
 struct SystemSettings {
-    boolean useSD; // should we attempt to use the SDCard? (No logging possible
-                   // otherwise)
+    boolean useSD;     // should we attempt to use the SDCard? (No logging possible
+                       // otherwise)
     boolean logToFile; // are we currently supposed to be logging to file?
     boolean SDCardInserted;
     uint8_t LED_CANTX;
@@ -115,15 +101,18 @@ struct SystemSettings {
     boolean lawicelAutoPoll;
     boolean lawicelTimestamping;
     int lawicelPollCounter;
-    boolean lawicelBusReception[NUM_BUSES]; // does user want to see messages
+    boolean lawicelBusReception[SAVVYCAN_NUM_BUSES]; // does user want to see messages
                                             // from this bus?
-    int8_t numBuses; // number of buses this hardware currently supports.
+    int8_t numBuses;                        // number of buses this hardware currently supports.
     WiFiClient clientNodes[MAX_CLIENTS];
     boolean isWifiConnected;
     boolean isWifiActive;
 };
 
-enum FILEOUTPUTTYPE { NONE = 0, BINARYFILE = 1, GVRET = 2, CRTD = 3 };
+enum FILEOUTPUTTYPE { NONE = 0,
+                      BINARYFILE = 1,
+                      GVRET = 2,
+                      CRTD = 3 };
 
 struct EEPROMSettings {
     uint8_t version;
@@ -135,15 +124,15 @@ struct EEPROMSettings {
     boolean CAN1_Enabled;
     boolean CAN1_FDMode;
 
-    boolean useBinarySerialComm; // use a binary protocol on the serial link or
-                                 // human readable format?
+    boolean useBinarySerialComm;   // use a binary protocol on the serial link or
+                                   // human readable format?
     FILEOUTPUTTYPE fileOutputType; // what format should we use for file output?
 
-    char fileNameBase[30]; // Base filename to use
-    char fileNameExt[4];   // extension to use
-    uint16_t fileNum; // incrementing value to append to filename if we create a
-                      // new file each time
-    boolean appendFile; // start a new file every power up or append to current?
+    char fileNameBase[30];    // Base filename to use
+    char fileNameExt[4];      // extension to use
+    uint16_t fileNum;         // incrementing value to append to filename if we create a
+                              // new file each time
+    boolean appendFile;       // start a new file every power up or append to current?
     boolean autoStartLogging; // should logging start immediately on start up?
 
     uint8_t logLevel; // Level of logging to output on serial line
@@ -158,9 +147,9 @@ struct EEPROMSettings {
 
     // if we're using WiFi then output to serial is disabled (it's far too slow
     // to keep up)
-    uint8_t wifiMode; // 0 = don't use wifi, 1 = connect to an AP, 2 = Create an
-                      // AP
-    uint8_t SSID[32]; // null terminated string for the SSID
+    uint8_t wifiMode;    // 0 = don't use wifi, 1 = connect to an AP, 2 = Create an
+                         // AP
+    uint8_t SSID[32];    // null terminated string for the SSID
     uint8_t WPA2Key[64]; // Null terminated string for the key. Can be a
                          // passphase or the actual key
 };
@@ -200,20 +189,18 @@ enum GVRET_PROTOCOL {
     PROTO_SET_EXT_BUSES = 14
 };
 
-
 /*
 Reports sent and received frames to a SavvyCANServer, copying them into a queue
 */
-class SavvyCANListener : public CANListener
-{
-public:
+class SavvyCANListener : public CANListener {
+  public:
     SavvyCANListener(CAN_COMMON &bus, QueueHandle_t &serverReceiveQueue);
-    void gotFrame(CAN_FRAME& frame);
-    void sentFrame(CAN_FRAME& frame);
-private:
-    QueueHandle_t   &serverReceiveQueue;
-    CAN_COMMON      &bus;
+    void gotFrame(CAN_FRAME &frame);
+    void sentFrame(CAN_FRAME &frame);
+
+  private:
+    QueueHandle_t &serverReceiveQueue;
+    CAN_COMMON &bus;
 };
 
 #endif
-
